@@ -37,7 +37,7 @@ TEST(PointCloudTest, Clear) {
 
 TEST(PointCloudTest, RGBPoint) {
     core::PointCloud<core::PointXYZRGB> cloud;
-    cloud.addPoint({1.0f, 0.0f, 0.0f, 255, 0, 0});
+    cloud.addPoint(core::PointXYZRGB{1.0f, 0.0f, 0.0f, 255, 0, 0});
     EXPECT_EQ(cloud.points()[0].r, 255);
 }
 
@@ -180,8 +180,8 @@ TEST(ProcessorTest, CorrectMinMaxForSymmetricCloud) {
 
 TEST(ProcessorTest, RGBStatsAreComputed) {
     core::PointCloud<core::PointXYZRGB> cloud;
-    cloud.addPoint({0.0f, 0.0f, 0.0f, 100, 200, 50});
-    cloud.addPoint({1.0f, 1.0f, 1.0f, 200, 100, 150});
+    cloud.addPoint(core::PointXYZRGB{0.0f, 0.0f, 0.0f, 100, 200, 50});
+    cloud.addPoint(core::PointXYZRGB{1.0f, 1.0f, 1.0f, 200, 100, 150});
 
     proc::Processor<core::PointXYZRGB> proc(2);
     auto s = proc.computeParallelStats(cloud);
