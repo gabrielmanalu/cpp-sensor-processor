@@ -18,8 +18,8 @@ jobs:
             cxx: g++-12
           - os: ubuntu-latest
             name: Linux Clang
-            cc: clang-14
-            cxx: clang++-14
+            cc: clang
+            cxx: clang++
           - os: windows-latest
             name: Windows MSVC
 
@@ -28,6 +28,12 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Install Clang
+        if: matrix.name == 'Linux Clang'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang
 
       - name: Configure (Unix)
         if: runner.os != 'Windows'
