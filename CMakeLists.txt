@@ -14,7 +14,7 @@ else()
     add_compile_options(-Wall -Wextra -Wpedantic -Werror)
 endif()
 
-# Header-only interface library — lets both targets share includes & link flags.
+# Interface library
 add_library(sensor_processor_lib INTERFACE)
 target_include_directories(sensor_processor_lib INTERFACE include)
 target_link_libraries(sensor_processor_lib INTERFACE Threads::Threads)
@@ -23,16 +23,35 @@ target_link_libraries(sensor_processor_lib INTERFACE Threads::Threads)
 add_executable(sensor_proc src/main.cpp)
 target_link_libraries(sensor_proc PRIVATE sensor_processor_lib)
 
-# Unit Tests (using FetchContent for GTest)
+# ========================
+# GoogleTest (stable!)
+# ========================
 include(FetchContent)
+
 FetchContent_Declare(
   googletest
-  URL https://github.com/google/googletest/archive/refs/heads/main.zip
+  URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.zip
 )
-set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+
+if(MSVC)
+  set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
+endif()
+
 FetchContent_MakeAvailable(googletest)
 
+# ========================
+# Tests
+# ========================
 enable_testing()
+
 add_executable(unit_tests tests/unit_tests.cpp)
-target_link_libraries(unit_tests PRIVATE gtest_main sensor_processor_lib)
-add_test(NAME unit_tests COMMAND unit_tests)
+
+target_link_libraries(unit_tests
+  PRIVATE
+  gtest
+  gtest_main
+  sensor_processor_lib
+)
+
+include(GoogleTest)
+gtest_discover_tests(unit_tests)
