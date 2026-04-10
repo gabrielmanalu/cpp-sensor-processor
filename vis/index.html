@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Point Cloud Visualizer</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background: #111; color: #eee; font-family: monospace; overflow: hidden; }
+
+        #canvas-container { position: fixed; inset: 0; }
+
+        #hud {
+            position: fixed;
+            top: 12px; left: 12px;
+            background: rgba(0,0,0,0.65);
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 10px 14px;
+            font-size: 12px;
+            line-height: 1.7;
+            pointer-events: none;
+            min-width: 220px;
+            z-index: 10;
+        }
+        #hud h2 { font-size: 13px; color: #0af; margin-bottom: 6px; }
+        #hud .label { color: #888; }
+        #hud .val   { color: #fff; }
+
+        #instructions {
+            position: fixed;
+            bottom: 12px; left: 50%;
+            transform: translateX(-50%);
+            background: rgba(0,0,0,0.65);
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 8px 16px;
+            font-size: 11px;
+            color: #888;
+            text-align: center;
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        #error-banner {
+            display: none;
+            position: fixed;
+            top: 12px; right: 12px;
+            background: rgba(180, 40, 40, 0.9);
+            border: 1px solid #f66;
+            border-radius: 6px;
+            padding: 12px 16px;
+            font-size: 12px;
+            max-width: 360px;
+            line-height: 1.6;
+            z-index: 10;
+        }
+        #error-banner code {
+            display: block;
+            margin-top: 6px;
+            background: rgba(0,0,0,0.4);
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            color: #ffa;
+        }
+    </style>
+</head>
+<body>
+
+<div id="canvas-container"></div>
+
+<div id="hud">
+    <h2>Point Cloud Visualizer</h2>
+    <div><span class="label">Points:  </span><span class="val" id="hud-count">loading...</span></div>
+    <div><span class="label">Source:  </span><span class="val" id="hud-source">-</span></div>
+    <div><span class="label">X range: </span><span class="val" id="hud-x">-</span></div>
+    <div><span class="label">Y range: </span><span class="val" id="hud-y">-</span></div>
+    <div><span class="label">Z range: </span><span class="val" id="hud-z">-</span></div>
+</div>
+
+<div id="error-banner">
+    <strong>Could not load viz_data.json</strong><br>
+    Run the server from the project root, then open the URL it prints:
+    <code>python serve.py</code>
+    Showing demo data instead.
+</div>
+
+<div id="instructions">
+    Left drag: rotate &nbsp;|&nbsp; Right drag / scroll: zoom &nbsp;|&nbsp; Middle drag: pan
+</div>
+
+<!-- UMD builds: no ES-module imports, works on any network -->
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+
+<script>
+// Bail out with a clear message if Three.js failed to load (e.g. no internet).
+if (typeof THREE === 'undefined') {
+    document.getElementById('hud-count').textContent = 'ERROR: Three.js failed to load';
+    document.getElementById('hud-count').style.color = '#f66';
+    throw new Error('THREE not loaded');
+}
+
+// ---------------------------------------------------------------------------
+// Renderer
+// ---------------------------------------------------------------------------
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111111);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.01, 5000);
+camera.position.set(0, 0, 60);
+
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+
+window.addEventListener('resize', function () {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ---------------------------------------------------------------------------
+// HUD
+// ---------------------------------------------------------------------------
+function updateHud(points, source) {
+    var minX = Infinity,  maxX = -Infinity;
+    var minY = Infinity,  maxY = -Infinity;
+    var minZ = Infinity,  maxZ = -Infinity;
+    for (var i = 0; i < points.length; i++) {
+        var p = points[i];
+        if (p.x < minX) minX = p.x;  if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y;  if (p.y > maxY) maxY = p.y;
+        if (p.z < minZ) minZ = p.z;  if (p.z > maxZ) maxZ = p.z;
+    }
+    function fmt(v) { return v.toFixed(2); }
+    document.getElementById('hud-count').textContent  = points.length.toLocaleString();
+    document.getElementById('hud-source').textContent = source;
+    document.getElementById('hud-x').textContent = '[' + fmt(minX) + ', ' + fmt(maxX) + ']';
+    document.getElementById('hud-y').textContent = '[' + fmt(minY) + ', ' + fmt(maxY) + ']';
+    document.getElementById('hud-z').textContent = '[' + fmt(minZ) + ', ' + fmt(maxZ) + ']';
+}
+
+// ---------------------------------------------------------------------------
+// Build Three.js Points from JSON array
+// ---------------------------------------------------------------------------
+function buildPointCloud(data) {
+    var positions = new Float32Array(data.length * 3);
+    var colors    = new Float32Array(data.length * 3);
+    var hasRgb    = data.length > 0 && data[0].r !== undefined;
+
+    // Pre-compute z range for gradient (single pass)
+    var minZ = Infinity, maxZ = -Infinity;
+    if (!hasRgb) {
+        for (var i = 0; i < data.length; i++) {
+            if (data[i].z < minZ) minZ = data[i].z;
+            if (data[i].z > maxZ) maxZ = data[i].z;
+        }
+    }
+    var zRange = (maxZ - minZ) || 1;
+
+    for (var i = 0; i < data.length; i++) {
+        var p = data[i];
+        positions[i * 3]     = p.x;
+        positions[i * 3 + 1] = p.y;
+        positions[i * 3 + 2] = p.z;
+
+        if (hasRgb) {
+            colors[i * 3]     = p.r / 255;
+            colors[i * 3 + 1] = p.g / 255;
+            colors[i * 3 + 2] = p.b / 255;
+        } else {
+            // Height-based cyan-to-white gradient
+            var t = (p.z - minZ) / zRange;
+            colors[i * 3]     = t;
+            colors[i * 3 + 1] = 0.7 + t * 0.3;
+            colors[i * 3 + 2] = 1.0;
+        }
+    }
+
+    var geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geo.setAttribute('color',    new THREE.BufferAttribute(colors, 3));
+    var mat = new THREE.PointsMaterial({ size: 0.5, vertexColors: true, sizeAttenuation: true });
+    return new THREE.Points(geo, mat);
+}
+
+// ---------------------------------------------------------------------------
+// Demo data - 4000 pts shown when viz_data.json cannot be fetched
+// ---------------------------------------------------------------------------
+function generateDemo() {
+    var pts = [];
+    for (var i = 0; i < 1000; i++) {
+        var a = (i / 1000) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * 20, y: Math.sin(a) * 20, z: (Math.random() - 0.5) * 4 });
+    }
+    for (var i = 0; i < 1000; i++) {
+        var a = (i / 1000) * Math.PI * 2;
+        pts.push({ x: Math.cos(a) * 10, y: Math.sin(a) * 10, z: (Math.random() - 0.5) * 2 });
+    }
+    for (var i = 0; i < 2000; i++) {
+        pts.push({
+            x: (Math.random() - 0.5) * 60,
+            y: (Math.random() - 0.5) * 60,
+            z: (Math.random() - 0.5) * 20
+        });
+    }
+    return pts;
+}
+
+// ---------------------------------------------------------------------------
+// Load viz_data.json; fall back to demo on any error
+// ---------------------------------------------------------------------------
+function showDemo(reason) {
+    console.warn('viz_data.json load failed:', reason, '-- showing demo.');
+    document.getElementById('error-banner').style.display = 'block';
+    var demo = generateDemo();
+    scene.add(buildPointCloud(demo));
+    updateHud(demo, 'demo (generated)');
+}
+
+var xhr = new XMLHttpRequest();
+xhr.open('GET', 'viz_data.json', true);
+xhr.onload = function () {
+    if (xhr.status !== 200) { showDemo('HTTP ' + xhr.status); return; }
+    try {
+        var data = JSON.parse(xhr.responseText);
+        if (!Array.isArray(data) || data.length === 0) throw new Error('empty');
+        scene.add(buildPointCloud(data));
+        updateHud(data, 'viz_data.json');
+    } catch (e) {
+        showDemo(e.message);
+    }
+};
+xhr.onerror = function () { showDemo('network error'); };
+xhr.send();
+
+// ---------------------------------------------------------------------------
+// Render loop
+// ---------------------------------------------------------------------------
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+animate();
+</script>
+</body>
+</html>
