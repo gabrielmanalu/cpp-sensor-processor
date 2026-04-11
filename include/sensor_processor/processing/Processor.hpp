@@ -19,7 +19,7 @@ struct Stats {
     std::size_t count{0};
 };
 
-// Observer interface — implement to receive stats after each chunk.
+// Observer interface - implement to receive stats after each chunk.
 class IStatsObserver {
 public:
     virtual void onStats(const Stats& stats) = 0;
